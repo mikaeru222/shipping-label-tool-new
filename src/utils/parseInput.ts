@@ -1,8 +1,7 @@
+// utils/parseInput.ts
 export function parseInput(input: string): string[] {
-  const blocks = input
-    .split(/\n{2,}/) // 空行で区切る
-    .map((block) => block.trim())
-    .filter((block) => block.length > 0);
-
-  return blocks;
+  return input
+    .trim()
+    .split(/\n\s*\n/) // 空行で分割
+    .map((block) => block.trim());
 }

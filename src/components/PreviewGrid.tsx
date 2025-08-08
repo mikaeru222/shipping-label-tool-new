@@ -1,18 +1,34 @@
 import React from "react";
 
-export function PreviewGrid({ labels }: { labels: string[] }) {
+type Props = {
+  labels: string[];
+};
+
+const PreviewGrid: React.FC<Props> = ({ labels }) => {
   return (
-    <div className="grid grid-cols-2 gap-4 print:grid-cols-2 print:gap-0">
-      {labels.map((label, idx) => (
+    <>
+      {labels.map((label, index) => (
         <div
-          key={idx}
-          className="border border-black p-4 h-[120mm] w-[90mm] overflow-hidden break-words text-sm print:break-before-auto"
+          key={index}
+          className="border border-gray-300 text-sm text-left break-words p-3 box-border bg-white flex flex-col justify-between"
+          // 高さ自動、幅は親グリッド依存
         >
-          {label.split("\n").map((line, i) => (
-            <div key={i}>{line}</div>
+          {label.split("\n").map((line, i, arr) => (
+            <div
+              key={i}
+              className={
+                i === arr.length - 1
+                  ? "font-bold text-base mt-1"
+                  : "mb-1"
+              }
+            >
+              {line}
+            </div>
           ))}
         </div>
       ))}
-    </div>
+    </>
   );
-}
+};
+
+export default PreviewGrid;

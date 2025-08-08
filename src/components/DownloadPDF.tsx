@@ -1,30 +1,34 @@
-import { jsPDF } from "jspdf";
+import React from "react";
+import html2pdf from "html2pdf.js";
 
-export function DownloadPDF({ labels }: { labels: string[] }) {
+type Props = {
+  elementId: string;
+};
+
+const DownloadPDF: React.FC<Props> = ({ elementId }) => {
   const generatePDF = () => {
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4",
-    });
+    const element = document.getElementById(elementId);
+    if (!element) return;
 
-    const labelWidth = 90;
-    const labelHeight = 120;
-    const marginX = 10;
-    const marginY = 10;
-
-    labels.forEach((label, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      const x = marginX + col * (labelWidth + 10);
-      const y = marginY + row * (labelHeight + 5);
-
-      const lines = doc.splitTextToSize(label, labelWidth - 10);
-      doc.text(lines, x + 5, y + 10);
-    });
-
-    doc.save("labels.pdf");
+    html2pdf()
+      .set({
+        margin: 0,
+        filename: "labels.pdf",
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
+      })
+      .from(element)
+      .save();
   };
 
   return (
-    <but
+    <button
+      className="bg-green-500 text-white px-4 py-1 rounded"
+      onClick={generatePDF}
+    >
+      PDF出力
+    </button>
+  );
+};
+
+export default DownloadPDF;
