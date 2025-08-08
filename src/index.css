@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* カスタムスタイルはこの下に */
+body {
+  font-family: sans-serif;
+  background: white;
+  color: black;
+  margin: 0;
+  padding: 0;
+}
+
+/* 印刷時にページ分割されないようにする */
+@media print {
+  html,
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
