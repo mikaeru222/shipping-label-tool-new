@@ -1,3 +1,11 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ここから追記：プレビュー内の自動リンク下線を無効化 */
+#label-area a,
+#label-area * {
+  text-decoration: none !important;
+  color: inherit !important; /* iOSの自動リンク色も継承に */
+}
+/* ここまで追記 */
