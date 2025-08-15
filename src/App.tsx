@@ -5,6 +5,7 @@ import ReceiverForm from "./components/ReceiverForm";
 import PreviewGrid from "./components/PreviewGrid";
 import DownloadPDF from "./components/DownloadPDF";
 import { parseReceiverInput } from "./utils/parseReceiverInput";
+import { neutralizeDataDetectors } from "./utils/antiDataDetector";
 
 type LabelData = { zip: string; addr: string; name: string };
 
@@ -23,9 +24,7 @@ export default function App() {
   const [receiverText, setReceiverText] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
-  // 差出人を「受取側と同じルール」で堅牢にパース：
-  // - どの行でも郵便番号を検出して取り除く（ハイフン有無OK）
-  // - 残りの行の「最後の行＝氏名」「それ以外を結合＝住所」
+  // 差出人を「受取側と同じルール」で堅牢にパース
   const parseSender = (text: string): LabelData | null => {
     const lines0 = (text || "")
       .replace(/\r\n?/g, "\n")
@@ -41,12 +40,12 @@ export default function App() {
     for (let i = 0; i < lines.length; i++) {
       const m = lines[i].match(reZip);
       if (m) {
-        zip = normalizePostal(m[0]);                 // 郵便番号を標準化
-        lines[i] = lines[i].replace(reZip, "").trim(); // 行から郵便番号を除去
+        zip = normalizePostal(m[0]);
+        lines[i] = lines[i].replace(reZip, "").trim();
         break;
       }
     }
-    lines = lines.filter(Boolean); // 空行を再除去
+    lines = lines.filter(Boolean);
 
     let addr = "";
     let name = "";
@@ -54,7 +53,6 @@ export default function App() {
       name = lines[lines.length - 1];
       addr = lines.slice(0, -1).join(" ").trim();
     } else if (lines.length === 1) {
-      // 住所なし・氏名だけのパターンにもフォールバック
       name = lines[0];
     }
     return { zip, addr, name };
@@ -137,9 +135,10 @@ export default function App() {
             className="grid grid-cols-3 gap-2 w-[210mm] p-4 border mt-4 bg-white mx-auto"
           >
             <PreviewGrid
-              labels={allLabels.map(
-                (label) =>
+              labels={allLabels.map((label) =>
+                neutralizeDataDetectors(
                   `${label.zip ? "〒" + label.zip : ""}\n${label.addr}\n${label.name}`
+                )
               )}
             />
           </div>
