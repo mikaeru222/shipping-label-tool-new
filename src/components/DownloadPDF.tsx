@@ -107,7 +107,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
     <div className="inline-flex items-center gap-2">
       <button
         onClick={handleClick}
-        className="px-4 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+        className="px-4 py-1 rounded bg-green-500 text-white hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-400"
       >
         PDF出力
       </button>
