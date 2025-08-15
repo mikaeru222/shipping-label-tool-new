@@ -1,5 +1,5 @@
 // src/components/DownloadPDF.tsx
-import React from "react";
+import React, { useRef } from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
@@ -12,71 +12,62 @@ const isiOS = () => {
   return isIPhoneIPadIPod || isTouchMac;
 };
 
-const isInAppWebView = () => {
-  const ua = (navigator.userAgent || "").toLowerCase();
-  return /line|instagram|fbav|fban|twitter|gsa|gmail|fb_iab|wv/.test(ua);
-};
-
 export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Props) {
+  const fallbackLinkRef = useRef<HTMLAnchorElement | null>(null);
+
   const handleClick = async () => {
-    const el = document.getElementById(elementId) as HTMLElement | null;
+    const el = document.getElementById(elementId);
     if (!el) {
       alert(`PDF化する領域が見つかりません（elementId="${elementId}"）`);
       return;
     }
 
-    // フォント読み込み待ち（白紙/欠け対策）
+    // フォント読み込み待ち（白紙対策）
     if ("fonts" in document) {
-      try { // @ts-ignore
+      try {
+        // @ts-ignore
         await (document as any).fonts.ready;
       } catch {}
     }
-    await new Promise((r) => setTimeout(r, 30));
+    await new Promise((r) => setTimeout(r, 50));
 
-    // A4をピクセル固定でレンダ（≈794×1123px, 96dpi換算）
-    const pxPerMm = 96 / 25.4;
-    const A4_W = Math.round(210 * pxPerMm);
-    const A4_H = Math.round(297 * pxPerMm);
-
-    // 一時的にA4サイズに固定してキャプチャ
-    const prev = {
-      width: el.style.width, height: el.style.height,
-      maxWidth: el.style.maxWidth, transform: el.style.transform,
-    };
-    el.style.width = `${A4_W}px`;
-    el.style.height = `${A4_H}px`;
-    el.style.maxWidth = "none";
-    el.style.transform = "none";
-
-    const canvas = await html2canvas(el, {
+    // 高解像度でキャプチャ（iOSでの巨大キャンバスは避ける）
+    const canvas = await html2canvas(el as HTMLElement, {
       backgroundColor: "#ffffff",
-      scale: 2, // 高精細。iOSでも安定（JPEGでなくPNGにするのが肝）
+      scale: Math.min(2, window.devicePixelRatio || 1),
       useCORS: true,
       allowTaint: false,
-      width: A4_W,
-      height: A4_H,
-      windowWidth: A4_W,
-      windowHeight: A4_H,
+      windowWidth: (el as HTMLElement).scrollWidth,
+      windowHeight: (el as HTMLElement).scrollHeight,
+      onclone: (doc) => {
+        const cloned = doc.getElementById(elementId);
+        if (cloned) {
+          const s = cloned as HTMLElement;
+          s.style.transform = "none";
+          s.style.filter = "none";
+        }
+      },
     });
 
-    // 元のスタイルを戻す
-    el.style.width = prev.width;
-    el.style.height = prev.height;
-    el.style.maxWidth = prev.maxWidth;
-    el.style.transform = prev.transform;
-
-    // PDF化：PNGで貼る（← 横線アーティファクト防止の核心）
     const pdf = new jsPDF("p", "mm", "a4");
     const pageW = pdf.internal.pageSize.getWidth();
     const pageH = pdf.internal.pageSize.getHeight();
-    const imgPng = canvas.toDataURL("image/png");
-    pdf.addImage(imgPng, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+    const ratio = Math.min(pageW / canvas.width, pageH / canvas.height);
+    const w = canvas.width * ratio;
+    const h = canvas.height * ratio;
+    const x = (pageW - w) / 2;
+    const y = 0;
+
+    pdf.addImage(canvas.toDataURL("image/jpeg", 1.0), "JPEG", x, y, w, h, undefined, "FAST");
 
     try {
       if (isiOS()) {
+        // iOS系：同一タブ遷移でPDFを開く → その画面で「共有 > ファイルに保存」
         const blob = pdf.output("blob");
+        const url = URL.createObjectURL(blob);
 
-        // 使えるならShare API
+        // Share API が使える端末ではまず試す（iOSのChrome/アプリ内でも有効なことが多い）
+        // 使えない/失敗なら同一タブ遷移へフォールバック
         // @ts-ignore
         if (navigator.canShare && navigator.share) {
           try {
@@ -87,21 +78,16 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
               await navigator.share({ files: [file], title: filename });
               return;
             }
-          } catch {}
+          } catch {
+            /* Share不可 → 同一タブへ */
+          }
         }
 
-        // LINE等のアプリ内WebViewは data:URI、通常iOSブラウザは blob URL 同一タブ
-        if (isInAppWebView()) {
-          const dataUri = pdf.output("dataurlstring");
-          window.location.href = dataUri;
-          return;
-        } else {
-          const url = URL.createObjectURL(blob);
-          window.location.href = url;
-          return;
-        }
+        // ★ 同一タブでPDF表示（テキストファイルが同時に生まれるのを回避）
+        window.location.href = url;
+        return;
       } else {
-        // Android/PC
+        // Android/PC：通常ダウンロード
         pdf.save(filename);
       }
     } catch (e) {
@@ -111,8 +97,12 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
   };
 
   return (
-    <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
-      PDF出力
-    </button>
+    <div className="inline-flex items-center gap-2">
+      <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
+        PDF出力
+      </button>
+      {/* フォールバック用リンク（必要時にJSで表示、download名も付与） */}
+      <a ref={fallbackLinkRef} href="#" download="labels.pdf" style={{ display: "none" }} />
+    </div>
   );
 }
