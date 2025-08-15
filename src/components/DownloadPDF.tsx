@@ -1,5 +1,5 @@
 // src/components/DownloadPDF.tsx
-import React, { useRef } from "react";
+import React from "react";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 
@@ -12,9 +12,13 @@ const isiOS = () => {
   return isIPhoneIPadIPod || isTouchMac;
 };
 
-export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Props) {
-  const fallbackLinkRef = useRef<HTMLAnchorElement | null>(null);
+// LINE / Gmail / Instagram / Twitter などアプリ内ブラウザ簡易検出
+const isInAppWebView = () => {
+  const ua = (navigator.userAgent || "").toLowerCase();
+  return /line|instagram|fbav|fban|twitter|gsa|gmail|fb_iab|wv/.test(ua);
+};
 
+export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Props) {
   const handleClick = async () => {
     const el = document.getElementById(elementId);
     if (!el) {
@@ -22,7 +26,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
       return;
     }
 
-    // フォント読み込み待ち（白紙対策）
+    // 白紙対策：フォント読み込み待ち
     if ("fonts" in document) {
       try {
         // @ts-ignore
@@ -31,7 +35,6 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
     }
     await new Promise((r) => setTimeout(r, 50));
 
-    // 高解像度でキャプチャ（iOSでの巨大キャンバスは避ける）
     const canvas = await html2canvas(el as HTMLElement, {
       backgroundColor: "#ffffff",
       scale: Math.min(2, window.devicePixelRatio || 1),
@@ -62,12 +65,8 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
 
     try {
       if (isiOS()) {
-        // iOS系：同一タブ遷移でPDFを開く → その画面で「共有 > ファイルに保存」
+        // まずは Share API（使える場合のみ）
         const blob = pdf.output("blob");
-        const url = URL.createObjectURL(blob);
-
-        // Share API が使える端末ではまず試す（iOSのChrome/アプリ内でも有効なことが多い）
-        // 使えない/失敗なら同一タブ遷移へフォールバック
         // @ts-ignore
         if (navigator.canShare && navigator.share) {
           try {
@@ -78,16 +77,22 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
               await navigator.share({ files: [file], title: filename });
               return;
             }
-          } catch {
-            /* Share不可 → 同一タブへ */
-          }
+          } catch {}
         }
 
-        // ★ 同一タブでPDF表示（テキストファイルが同時に生まれるのを回避）
+        // ★ iOS のアプリ内ブラウザ(LINE等)では Data URI を同一タブで開く → テキスト重複防止
+        if (isInAppWebView()) {
+          const dataUri = pdf.output("dataurlstring"); // data:application/pdf;base64,...
+          window.location.href = dataUri;             // 同一タブ遷移
+          return;
+        }
+
+        // 通常の iOS ブラウザ（Safari/Chrome）は blob URL で同一タブ表示
+        const url = URL.createObjectURL(blob);
         window.location.href = url;
         return;
       } else {
-        // Android/PC：通常ダウンロード
+        // Android / PC：通常ダウンロード
         pdf.save(filename);
       }
     } catch (e) {
@@ -97,12 +102,8 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
   };
 
   return (
-    <div className="inline-flex items-center gap-2">
-      <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
-        PDF出力
-      </button>
-      {/* フォールバック用リンク（必要時にJSで表示、download名も付与） */}
-      <a ref={fallbackLinkRef} href="#" download="labels.pdf" style={{ display: "none" }} />
-    </div>
+    <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
+      PDF出力
+    </button>
   );
 }
