@@ -12,12 +12,6 @@ const isiOS = () => {
   return isIPhoneIPadIPod || isTouchMac;
 };
 
-// Gmail/LINE/Instagram/Twitter/FB などのアプリ内ブラウザ簡易検出
-const isInAppWebView = () => {
-  const ua = (navigator.userAgent || "").toLowerCase();
-  return /line|instagram|fbav|fban|twitter|gsa|gmail/.test(ua);
-};
-
 export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Props) {
   const fallbackLinkRef = useRef<HTMLAnchorElement | null>(null);
 
@@ -28,7 +22,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
       return;
     }
 
-    // フォントロード待ち（白紙対策）
+    // フォント読み込み待ち（白紙対策）
     if ("fonts" in document) {
       try {
         // @ts-ignore
@@ -37,7 +31,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
     }
     await new Promise((r) => setTimeout(r, 50));
 
-    // 高解像度キャプチャ（iOSで巨大キャンバスになりすぎないよう上限）
+    // 高解像度でキャプチャ（iOSでの巨大キャンバスは避ける）
     const canvas = await html2canvas(el as HTMLElement, {
       backgroundColor: "#ffffff",
       scale: Math.min(2, window.devicePixelRatio || 1),
@@ -66,12 +60,14 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
 
     pdf.addImage(canvas.toDataURL("image/jpeg", 1.0), "JPEG", x, y, w, h, undefined, "FAST");
 
-    // 端末/環境別フロー
     try {
       if (isiOS()) {
+        // iOS系：同一タブ遷移でPDFを開く → その画面で「共有 > ファイルに保存」
         const blob = pdf.output("blob");
+        const url = URL.createObjectURL(blob);
 
-        // 1) iOS: Shareシート（Chrome/Gmail/LINE のWebViewでも有効なことが多い）
+        // Share API が使える端末ではまず試す（iOSのChrome/アプリ内でも有効なことが多い）
+        // 使えない/失敗なら同一タブ遷移へフォールバック
         // @ts-ignore
         if (navigator.canShare && navigator.share) {
           try {
@@ -83,35 +79,15 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
               return;
             }
           } catch {
-            /* Share不可 → 次へ */
+            /* Share不可 → 同一タブへ */
           }
         }
 
-        // 2) 新規タブで開く（iOSはダウンロードよりこちらが安定）
-        const url = URL.createObjectURL(blob);
-        const win = window.open(url, "_blank", "noopener");
-        if (win) {
-          setTimeout(() => URL.revokeObjectURL(url), 60_000);
-          return;
-        }
-
-        // 3) さらに開けない（アプリ内ブラウザでポップアップが弾かれた）→ クリック用リンクを表示
-        if (fallbackLinkRef.current) {
-          fallbackLinkRef.current.href = url;
-          fallbackLinkRef.current.style.display = "inline-block";
-          fallbackLinkRef.current.textContent = "PDFを開く（タップして保存）";
-        } else {
-          const a = document.createElement("a");
-          a.href = url;
-          a.target = "_blank";
-          a.rel = "noopener";
-          a.textContent = "PDFを開く（タップして保存）";
-          a.style.display = "inline-block";
-          a.style.marginLeft = "8px";
-          document.body.appendChild(a);
-        }
+        // ★ 同一タブでPDF表示（テキストファイルが同時に生まれるのを回避）
+        window.location.href = url;
+        return;
       } else {
-        // Android/PC: 通常の保存
+        // Android/PC：通常ダウンロード
         pdf.save(filename);
       }
     } catch (e) {
@@ -125,8 +101,8 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
       <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
         PDF出力
       </button>
-      {/* iOSのアプリ内ブラウザでポップアップブロックされた時のフォールバック */}
-      <a ref={fallbackLinkRef} href="#" style={{ display: "none" }} />
+      {/* フォールバック用リンク（必要時にJSで表示、download名も付与） */}
+      <a ref={fallbackLinkRef} href="#" download="labels.pdf" style={{ display: "none" }} />
     </div>
   );
 }
