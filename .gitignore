@@ -1,0 +1,15 @@
+# dependencies / build cache
+node_modules/
+dist/
+build/
+.vite/
+node_modules/.vite/
+
+# env / OS
+.env
+.env.*
+*.log
+**/.DS_Store
+
+# editor
+.vscode/
