@@ -22,18 +22,16 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
       return;
     }
 
-    // フォントロード待ち（白紙防止）— 型安全に回避
+    // フォント読み込み待ち（白紙対策）
     const anyDoc = document as any;
     try {
       if (anyDoc.fonts && typeof anyDoc.fonts.ready?.then === "function") {
         await anyDoc.fonts.ready;
       }
-    } catch {
-      /* noop */
-    }
+    } catch {}
     await new Promise((r) => setTimeout(r, 50));
 
-    // 高解像度キャプチャ（横線アーティファクト対策で PNG を使う）
+    // 高解像度キャプチャ（PNGで横線アーティファクト回避）
     const canvas = await html2canvas(el as HTMLElement, {
       backgroundColor: "#ffffff",
       scale: Math.min(2, window.devicePixelRatio || 1),
@@ -60,7 +58,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
     const x = (pageW - w) / 2;
     const y = 0;
 
-    const imgData = canvas.toDataURL("image/png"); // ← PNG に固定
+    const imgData = canvas.toDataURL("image/png");
     pdf.addImage(imgData, "PNG", x, y, w, h);
 
     try {
@@ -72,16 +70,15 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
         if (typeof nav.share === "function") {
           try {
             const file = new File([blob], filename, { type: "application/pdf" });
-            if (typeof nav.canShare === "function" ? nav.canShare({ files: [file] }) : true) {
+            const can = typeof nav.canShare === "function" ? nav.canShare({ files: [file] }) : true;
+            if (can) {
               await nav.share({ files: [file], title: filename });
               return;
             }
-          } catch {
-            /* Share 不可 → 次へ */
-          }
+          } catch {}
         }
 
-        // 新規タブで開く（iOSはダウンロードより安定）
+        // 新規タブで開く（iOSで安定）
         const url = URL.createObjectURL(blob);
         const win = window.open(url, "_blank", "noopener");
         if (win) {
@@ -89,7 +86,7 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
           return;
         }
 
-        // さらに開けない（アプリ内ブラウザで弾かれた）→ 手動リンク表示
+        // さらに開けない場合のフォールバックリンク
         if (fallbackLinkRef.current) {
           fallbackLinkRef.current.href = url;
           fallbackLinkRef.current.download = filename;
@@ -108,7 +105,10 @@ export default function DownloadPDF({ elementId, filename = "labels.pdf" }: Prop
 
   return (
     <div className="inline-flex items-center gap-2">
-      <button onClick={handleClick} className="px-4 py-1 rounded border border-gray-300 bg-white">
+      <button
+        onClick={handleClick}
+        className="px-4 py-1 rounded bg-blue-500 text-white hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-400"
+      >
         PDF出力
       </button>
       {/* iOSのアプリ内ブラウザでポップアップブロックされた際のフォールバック */}
