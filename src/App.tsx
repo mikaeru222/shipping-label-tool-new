@@ -1,62 +1,21 @@
+// src/App.tsx
 import React, { useState } from "react";
 import SenderForm from "./components/SenderForm";
 import ReceiverForm from "./components/ReceiverForm";
 import PreviewGrid from "./components/PreviewGrid";
 import DownloadPDF from "./components/DownloadPDF";
+import { parseReceiverInput } from "./utils/parseReceiverInput";
 
-type LabelData = {
-  zip: string;
-  addr: string;
-  name: string;
-};
-
-function parseReceiverInput(text: string): LabelData[] {
-  const results: LabelData[] = [];
-  const lines = text
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-
-  let i = 0;
-  while (i < lines.length) {
-    let zip = "", addr = "", name = "";
-
-    if (/^\s*〒?\d{3}-\d{4}/.test(lines[i]) && i + 2 < lines.length) {
-      zip = lines[i].replace("〒", "").trim();
-      addr = lines[i + 1];
-      name = lines[i + 2];
-      results.push({ zip, addr, name });
-      i += 3;
-      continue;
-    }
-
-    const oneLine = lines[i];
-    const zipMatch = oneLine.match(/(〒?\d{3}-\d{4})/);
-    if (zipMatch) {
-      zip = zipMatch[1].replace("〒", "");
-      const rest = oneLine.replace(zipMatch[1], "").trim();
-      const parts = rest.split(/\s+/);
-      if (parts.length >= 2) {
-        name = parts.slice(-2).join(" ");
-        addr = parts.slice(0, -2).join(" ");
-      } else if (parts.length === 1) {
-        name = parts[0];
-        addr = "";
-      } else {
-        name = "";
-        addr = "";
-      }
-      results.push({ zip, addr, name });
-      i += 1;
-      continue;
-    }
-
-    i += 1;
-  }
-  return results;
-}
+type LabelData = { zip: string; addr: string; name: string };
 
 const SENDER_STORAGE_KEY = "savedSenderLabelData";
+
+// 7桁を 123-4567 に整形（〒/スペース/記号は除去）
+const normalizePostal = (raw: string) => {
+  const digits = (raw || "").replace(/[^\d]/g, "");
+  if (digits.length === 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return (raw || "").replace(/〒|\s/g, "");
+};
 
 export default function App() {
   const [senderText, setSenderText] = useState("");
@@ -64,26 +23,40 @@ export default function App() {
   const [receiverText, setReceiverText] = useState("");
   const [showPreview, setShowPreview] = useState(false);
 
+  // 差出人を「受取側と同じルール」で堅牢にパース：
+  // - どの行でも郵便番号を検出して取り除く（ハイフン有無OK）
+  // - 残りの行の「最後の行＝氏名」「それ以外を結合＝住所」
   const parseSender = (text: string): LabelData | null => {
-    const lines = text
+    const lines0 = (text || "")
+      .replace(/\r\n?/g, "\n")
       .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line !== "");
-    if (lines.length === 0) return null;
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (lines0.length === 0) return null;
 
-    if (/〒?\d{3}-\d{4}/.test(lines[0]) && lines[0].includes(" ")) {
-      const m = lines[0].match(/(〒?\d{3}-\d{4})/);
-      const zip = m ? m[1].replace("〒", "") : "";
-      const rest = lines[0].replace(/〒?\d{3}-\d{4}/, "").trim();
-      const parts = rest.split(/\s+/);
-      const name = parts.length > 1 ? parts.pop() + " " + (parts.pop() ?? "") : parts[0] ?? "";
-      const addr = parts.join(" ");
-      return { zip, addr, name: name.trim() };
+    const reZip = /〒?\s*\d{3}[-\s]?\d{4}/;
+    let zip = "";
+    let lines = [...lines0];
+
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(reZip);
+      if (m) {
+        zip = normalizePostal(m[0]);                 // 郵便番号を標準化
+        lines[i] = lines[i].replace(reZip, "").trim(); // 行から郵便番号を除去
+        break;
+      }
     }
-    const zipMatch = lines[0].match(/〒?(\d{3}-\d{4})/);
-    const zip = zipMatch ? zipMatch[1] : "";
-    const addr = lines.length >= 2 ? lines[1] : "";
-    const name = lines.length >= 3 ? lines[2] : "";
+    lines = lines.filter(Boolean); // 空行を再除去
+
+    let addr = "";
+    let name = "";
+    if (lines.length >= 2) {
+      name = lines[lines.length - 1];
+      addr = lines.slice(0, -1).join(" ").trim();
+    } else if (lines.length === 1) {
+      // 住所なし・氏名だけのパターンにもフォールバック
+      name = lines[0];
+    }
     return { zip, addr, name };
   };
 
@@ -103,13 +76,13 @@ export default function App() {
   };
 
   const sender = parseSender(senderText);
-  const senderLabels = sender
-    ? Array.from({ length: senderCount }, () => sender)
-    : [];
+  const senderLabels = sender ? Array.from({ length: senderCount }, () => sender) : [];
 
-  const receiverLabels = parseReceiverInput(receiverText).map((r) => ({
-    ...r,
-    name: `${r.name} 様`,
+  // 宛先：utils の新パーサで zip/addr/name を取得し、宛名にだけ「様」を付与
+  const receiverLabels: LabelData[] = parseReceiverInput(receiverText).map((r) => ({
+    zip: r.zip || "",
+    addr: r.addr || "",
+    name: r.name ? `${r.name} 様` : "",
   }));
 
   const allLabels: LabelData[] = [...senderLabels, ...receiverLabels];
